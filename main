@@ -1,0 +1,96 @@
+import requests
+import json
+import os
+
+logFile = open("log.txt", "w")  # To add in our logs for checking results
+
+# Defining API parameters. Change for different consols and users
+
+mainUrl = "https://<IP_Address>:<Port>/api/3/"
+authUser = "<Username to login to Nexpose>"
+authPass = "<Password>"
+authHash = "<Basic hash of the credentials>"
+tagFile = "Nexpose-tags.txt" # Change to your text file name
+
+# Adding all tags and their IDs from Nexpose console to Dictionary
+
+tags = {}
+url = mainUrl + "tags/"
+response = requests.get(
+    url,
+    verify=False,
+    auth=(authUser, authPass),
+    headers={
+        "Authorization": authHash,
+        "Content-type": "application/json",
+    },
+)
+details = json.loads(response.text)
+a = details["resources"]
+for tagDetails in a:
+    name = tagDetails["name"]
+    id = tagDetails["id"]
+    tags[name] = id
+
+logFile.write("Tags added to dictionary\n")
+logFile.write(str(tags))
+logFile.write("\n")
+
+# Adding all asset IPs and asset IDs to a dictionary
+
+assetDict = {}
+f = open(tagFile, "r")
+for line in f:
+    fields = line.split(" ", 1)
+    ip = fields[0]
+    url = mainUrl + "assets/search"
+    response1 = requests.post(
+        url,
+        verify=False,
+        auth=(authUser, authPass),
+        headers={
+            "Authorization": authHash,
+            "Content-type": "application/json",
+        },
+        data=json.dumps(
+            {
+                "filters": [{"field": "ip-address", "operator": "is", "value": ip}],
+                "match": "any",
+            }
+        ),
+    )
+    details = json.loads(response1.text)
+    resources = details["resources"]
+    a = resources[0]
+    assetDict[ip] = a["id"]
+f.close()
+
+logFile.write("Assets added to dictionary\n")
+logFile.write(str(assetDict) + "\n")
+
+# Start tagging on the console using POST API
+
+f = open(tagFile, "r")
+for line in f:
+    fields = line.split(" ", 1)
+    ip = fields[0]
+    tag_name = fields[1].split("\n")
+    tid = str(tags[tag_name[0]])
+    aid = str(assetDict[ip])
+    url = mainUrl + "assets/" + aid + "/tags/" + tid
+
+    logFile.write("API url generated: ")
+    logFile.write(url + "\n")
+
+    response = requests.put(
+        url,
+        verify=False,
+        auth=(authUser, authPass),
+        headers={
+            "Authorization": authHash,
+            "Content-type": "application/json",
+        },
+    )
+    logFile.write(ip + " added to " + str(tag_name[0]) + "\n")
+f.close()
+logFile.close()
